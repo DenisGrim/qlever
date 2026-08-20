@@ -36,4 +36,14 @@ if (NOT _NO_BENCHMARK)
 
     addAndLinkBenchmark(GroupByHashMapBenchmark engine testUtil gtest gmock)
 
+    add_subdirectory(ips4o)
+    # `ips4o::parallel` is only compiled in when `_REENTRANT` is defined, which
+    # GCC/Clang set automatically for `-pthread`. On systems where pthread
+    # support is already part of libc, CMake's `Threads::Threads` (used inside
+    # ips4o's own CMakeLists.txt) resolves to an empty interface and never
+    # passes `-pthread`, so we add it explicitly here.
+    target_compile_options(ips4o INTERFACE -pthread)
+    addAndLinkBenchmark(IdTableSortBenchmark engine testUtil ips4o)
+
+
 endif()

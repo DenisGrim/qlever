@@ -340,7 +340,7 @@ class IdTable {
   CPP_template(typename = void)(requires(!isView)) T& operator()(
       size_t row, size_t column) {
     AD_EXPENSIVE_CHECK(column < data().size(), [&]() {
-      return absl::StrCat(row, " , ", column, ", ", data().size(), " ",
+      return absl::StrCat(row, ", ", column, ", ", data().size(), ", ",
                           numColumns(), ", ", numStaticColumns);
     });
     AD_EXPENSIVE_CHECK(row < data().at(column).size());
