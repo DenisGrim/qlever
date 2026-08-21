@@ -21,7 +21,7 @@ class IdTableSortBenchmark : public BenchmarkInterface {
    IdTableSortBenchmark() {
      ad_utility::ConfigManager& config = getConfigManager();
      config.addOption("num-rows", "how many rows in every table",
-         &numRows_, {1'000'000});
+         &numRows_, {10'000, 100'000});
      config.addOption("num-cols", "how many cols in every table",
          &numCols_, {1, 2, 3, 4, 5});
      /*
@@ -93,6 +93,8 @@ class IdTableSortBenchmark : public BenchmarkInterface {
         break;
       case Mode::PRODUCTION:
         IdTableUtils::sort(table, sortCols);
+        break;
+      case Mode::COUNT:
         break;
     }
   }

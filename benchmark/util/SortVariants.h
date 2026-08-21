@@ -42,12 +42,15 @@ template <int WIDTH, typename Sorter = detail::StdSort>
 void sortByPermutation(IdTable* table, const std::vector<ColumnIndex>& sortCols,
         Sorter sorter = {}) {
   IdTableStatic<WIDTH> stab = std::move(*table).toStatic<WIDTH>();
+  // get columns from table as array since 
+  // IdTable's [] operator uses unnecessary row-proxy
+  auto cols = std::as_const(stab).getColumns();
   std::size_t numRows = stab.numRows();
 
   auto comparison = [&sortCols, &stab](std::size_t i, std::size_t j) {
     for (auto& col : sortCols) {
-      if (stab[i][col] != stab[j][col]) {
-        return stab[i][col] < stab[j][col];
+      if (cols[col][i] != cols[col][j]) {
+        return cols[col][i] < cols[col][j];
       }
     }
     return false;
@@ -62,7 +65,6 @@ void sortByPermutation(IdTable* table, const std::vector<ColumnIndex>& sortCols,
   IdTableStatic<WIDTH> result{stab.numColumns(), stab.getAllocator()};
   result.resize(numRows);
 
-  // TODO use emplace_back or push_back probably??
   for (size_t col = 0; col < stab.numColumns(); ++col) {
     auto src = stab.getColumn(col);
     auto dst = result.getColumn(col);
