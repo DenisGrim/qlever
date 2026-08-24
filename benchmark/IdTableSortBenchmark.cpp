@@ -21,14 +21,12 @@ class IdTableSortBenchmark : public BenchmarkInterface {
    IdTableSortBenchmark() {
      ad_utility::ConfigManager& config = getConfigManager();
      config.addOption("num-rows", "how many rows in every table",
-         &numRows_, {10'000, 100'000});
+         &numRows_, {10'000, 100'000, 1'000'000});
      config.addOption("num-cols", "how many cols in every table",
          &numCols_, {1, 2, 3, 4, 5});
-     /*
      config.addOption("amount-relevant-columns",
              "how many columns are used for sorting",
-         &amount_rel_columns_, {1, 2, 3,});
-     */
+         &amount_rel_columns_, {1, 2, 3, 4});
    }
 
 
@@ -43,24 +41,26 @@ class IdTableSortBenchmark : public BenchmarkInterface {
    BenchmarkResults runAllBenchmarks() override {
      BenchmarkResults results{};
    
-     //TODO make this variable
-     std::vector<ColumnIndex> sortCols{0};
 
-     for (auto rows : numRows_) {
-       auto& resultsTable = results.addTable(std::to_string(rows), {},
-               {"Column_amount", "Production", "Permutation",
-               "Production_IPS4O", "Permutation_IPS4O"}
-               );
-       for (size_t colIdx = 0; colIdx < numCols_.size(); colIdx++) {
-         resultsTable.addRow();
-         resultsTable.setEntry(colIdx, 0, std::to_string(numCols_[colIdx]));
+     for (int arc : amount_rel_columns_) {
+       auto& group = results.addGroup("amount_sorting_columns: "
+           + std::to_string(arc));
+       std::vector<ColumnIndex> sortCols(arc);
+       std::iota(sortCols.begin(), sortCols.end(), 0);
 
-         for (int i = 0; i < static_cast<int>(Mode::COUNT); i++) {
-           IdTable table = createRandomlyFilledIdTable(rows, numCols_[colIdx]);
-           auto sortTest = [&](){
-               runOneBenchmark(table, static_cast<Mode>(i), sortCols);
-           };
-           resultsTable.addMeasurement(colIdx, i + 1, sortTest);
+       for (auto rows : numRows_) {
+         auto& resultsTable = group.addTable(std::to_string(rows), {},
+                 {"Column_amount", "Production", "Permutation",
+                 "Production_IPS4O", "Permutation_IPS4O"}
+                 );
+         // loop over index of cols because it determines placement in results table
+         for (size_t colIdx = 0; colIdx < numCols_.size(); colIdx++) {
+           resultsTable.addRow();
+           if (arc > numCols_[colIdx]) {
+             continue;
+           }
+           resultsTable.setEntry(colIdx, 0, std::to_string(numCols_[colIdx]));
+           addEverySortMethodToResults(resultsTable, rows, colIdx, sortCols);
          }
        }
      }
@@ -69,6 +69,17 @@ class IdTableSortBenchmark : public BenchmarkInterface {
    }
 
  private:
+  void addEverySortMethodToResults(auto& resultsTable, int rows, int colIdx,
+      std::vector<ColumnIndex>& sortCols) {
+
+    for (int i = 0; i < static_cast<int>(Mode::COUNT); i++) {
+      IdTable table = createRandomlyFilledIdTable(rows, numCols_[colIdx]);
+      auto sortTest = [&](){
+          runOneBenchmark(table, static_cast<Mode>(i), sortCols);
+      };
+      resultsTable.addMeasurement(colIdx, i + 1, sortTest);
+    }
+  }
   void runOneBenchmark(IdTable& table, Mode mode,
           std::vector<ColumnIndex> sortCols) {
     switch (mode) {

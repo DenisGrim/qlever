@@ -47,7 +47,7 @@ void sortByPermutation(IdTable* table, const std::vector<ColumnIndex>& sortCols,
   auto cols = std::as_const(stab).getColumns();
   std::size_t numRows = stab.numRows();
 
-  auto comparison = [&sortCols, &stab](std::size_t i, std::size_t j) {
+  auto comparison = [&sortCols, &cols](std::size_t i, std::size_t j) {
     for (auto& col : sortCols) {
       if (cols[col][i] != cols[col][j]) {
         return cols[col][i] < cols[col][j];
