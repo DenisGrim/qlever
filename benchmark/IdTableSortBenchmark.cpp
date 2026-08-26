@@ -9,7 +9,6 @@
 
 namespace ad_benchmark {
 
-enum class Mode {PERM_IPS4O, PERM, IPS4O, PRODUCTION, COUNT};
 
 class IdTableSortBenchmark : public BenchmarkInterface {
  protected:
@@ -26,7 +25,7 @@ class IdTableSortBenchmark : public BenchmarkInterface {
          &numCols_, {1, 2, 3, 4, 5});
      config.addOption("amount-relevant-columns",
              "how many columns are used for sorting",
-         &amount_rel_columns_, {1, 2, 3, 4});
+         &amount_rel_columns_, {1, 2, 3});
    }
 
 
@@ -50,10 +49,10 @@ class IdTableSortBenchmark : public BenchmarkInterface {
 
        for (auto rows : numRows_) {
          auto& resultsTable = group.addTable(std::to_string(rows), {},
-                 {"Column_amount", "Production", "Permutation",
-                 "Production_IPS4O", "Permutation_IPS4O"}
-                 );
-         // loop over index of cols because it determines placement in results table
+             SortModeColumnNames);
+
+         // loop over index of cols because it determines 
+         // placement in results table
          for (size_t colIdx = 0; colIdx < numCols_.size(); colIdx++) {
            resultsTable.addRow();
            if (arc > numCols_[colIdx]) {
@@ -72,41 +71,42 @@ class IdTableSortBenchmark : public BenchmarkInterface {
   void addEverySortMethodToResults(auto& resultsTable, int rows, int colIdx,
       std::vector<ColumnIndex>& sortCols) {
 
-    for (int i = 0; i < static_cast<int>(Mode::COUNT); i++) {
+    for (int i = 0; i < static_cast<int>(SortMode::COUNT); i++) {
       IdTable table = createRandomlyFilledIdTable(rows, numCols_[colIdx]);
       auto sortTest = [&](){
-          runOneBenchmark(table, static_cast<Mode>(i), sortCols);
+          runOneBenchmark(table, static_cast<SortMode>(i), sortCols);
       };
       resultsTable.addMeasurement(colIdx, i + 1, sortTest);
     }
   }
-  void runOneBenchmark(IdTable& table, Mode mode,
+
+  // TODO 
+  void runOneBenchmark(IdTable& table, SortMode mode,
           std::vector<ColumnIndex> sortCols) {
     switch (mode) {
-      case Mode::PERM_IPS4O:
-        ad_utility::callFixedSizeVi(table.numColumns(),
-                                    [&table, &sortCols](auto I) {
-                                    sortByPermutation<I>(&table, sortCols,
-                                            detail::Ips4oParallelSort{});
-                                    });
-        break;
-      case Mode::PERM:
-        ad_utility::callFixedSizeVi(table.numColumns(),
-                                    [&table, &sortCols](auto I) {
-                                    sortByPermutation<I>(&table, sortCols);
-                                    });
-        break;
-      case Mode::IPS4O:
-        ad_utility::callFixedSizeVi(table.numColumns(),
-                                    [&table, &sortCols](auto I){
-                                    ips4oSort<I>(&table, sortCols);
-                                    });
-        break;
-      case Mode::PRODUCTION:
+      case SortMode::PRODUCTION:
         IdTableUtils::sort(table, sortCols);
         break;
-      case Mode::COUNT:
+
+      // all modes using row proxies
+      case SortMode::ROWP_IPS4O:
+      case SortMode::ROWP_IPS4O_SEQ:
+      case SortMode::ROWP_GNU:
+      //case SortMode::ROWP_STD_PAR:
+      //case SortMode::ROWP_BOOST:
+        ad_utility::callFixedSizeVi(table.numColumns(),
+                                    [&table, &sortCols, &mode](auto I){
+                                    rowProxySort<I>
+                                    (&table, sortCols, detail::Sorter{mode});
+                                    });
         break;
+      // rest treat IdTable as column-based -> permutation
+      default:
+        ad_utility::callFixedSizeVi(table.numColumns(),
+                                    [&table, &sortCols, &mode](auto I) {
+                                    sortByPermutation<I>
+                                    (&table, sortCols, detail::Sorter{mode});
+                                    });
     }
   }
 
