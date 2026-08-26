@@ -8,6 +8,9 @@
 #include <algorithm>
 #include <numeric>
 #include <vector>
+#include <parallel/algorithm>
+#include <execution>
+#include <boost/sort/sort.hpp>
 
 #include "engine/idTable/IdTable.h"
 #include "ips4o.hpp"
@@ -19,28 +22,63 @@
 
 namespace ad_benchmark {
 
-namespace detail {
-// Default `Sorter` for `sortByPermutation` below: just forwards to std::sort
-struct StdSort {
-  template <typename It, typename Comp>
-  void operator()(It begin, It end, Comp comp) const {
-    std::sort(begin, end, comp);
-  }
-};
+// since the enum is used to iterate through and determines placement in column,
+// it's best when the column-names are right beside it to make sure order matches
+enum class SortMode {PERM_IPS4O, PERM_IPS4O_SEQ, PERM_STD, PERM_GNU, PERM_STD_PAR,
+  /*PERM_BOOST,*/
+  ROWP_IPS4O, PRODUCTION, ROWP_IPS4O_SEQ, ROWP_GNU, ROWP_STD_PAR, /*ROWP_BOOST,*/
+  COUNT};
+const std::vector<std::__cxx11::basic_string<char>>
+  SortModeColumnNames = {"Column_amount",
+    "Permutation_IPS4O", "Permutation_IPS4O_SEQ", "Permutation_STD", "Permutation_GNU",
+    "Permutation_STD_PAR", /*"Permutation_BOOST",*/
+    "Rowproxy_IPS4O", "Production", "Rowproxy_IPS4O_SEQ", "Rowproxy_GNU",
+    "Rowproxy_STD_PAR", /*"Rowproxy_BOOST"*/};
 
-// `Sorter` for `sortByPermutation` below that forwards to
-// `ips4o::parallel::sort`.
-struct Ips4oParallelSort {
+namespace detail {
+
+struct Sorter {
+  SortMode mode_;
+
   template <typename It, typename Comp>
   void operator()(It begin, It end, Comp comp) const {
-    ips4o::parallel::sort(begin, end, comp);
+    switch (mode_) {
+      case SortMode::PERM_STD:
+        std::sort(begin, end, comp);
+        break;
+      case SortMode::PERM_IPS4O: 
+      case SortMode::ROWP_IPS4O:
+        ips4o::parallel::sort(begin, end, comp);
+        break;
+      case SortMode::PERM_IPS4O_SEQ:
+      case SortMode::ROWP_IPS4O_SEQ:
+        ips4o::sort(begin, end, comp);
+        break;
+      case SortMode::PERM_GNU:
+      case SortMode::ROWP_GNU:
+        __gnu_parallel::sort(begin, end, comp);
+        break;
+      case SortMode::PERM_STD_PAR:
+      case SortMode::ROWP_STD_PAR:
+        std::sort(std::execution::par, begin, end, comp);
+        break;
+      /*
+      case SortMode::PERM_BOOST:
+      case SortMode::ROWP_BOOST:
+        boost::sort::block_indirect_sort(begin, end, comp);
+        break;
+      */
+      default:
+        std::runtime_error("no valid mode selected for Sorter");
+    }
   }
 };
 }  // namespace detail
 
-template <int WIDTH, typename Sorter = detail::StdSort>
+
+template <int WIDTH, typename Sorter = detail::Sorter>
 void sortByPermutation(IdTable* table, const std::vector<ColumnIndex>& sortCols,
-        Sorter sorter = {}) {
+        Sorter sorter) {
   IdTableStatic<WIDTH> stab = std::move(*table).toStatic<WIDTH>();
   // get columns from table as array since 
   // IdTable's [] operator uses unnecessary row-proxy
@@ -75,8 +113,10 @@ void sortByPermutation(IdTable* table, const std::vector<ColumnIndex>& sortCols,
   *table = std::move(result).toDynamic();
 }
 
-template <int WIDTH>
-void ips4oSort(IdTable* table, const std::vector<ColumnIndex>& sortCols) {
+// TODO rename to 'Rowproxy' version and let it use variable sorter via enum
+template <int WIDTH, typename Sorter = detail::Sorter>
+void rowProxySort(IdTable* table, const std::vector<ColumnIndex>& sortCols,
+    detail::Sorter sorter) {
   IdTableStatic<WIDTH> stab = std::move(*table).toStatic<WIDTH>();
   auto comparison = [&sortCols](const auto& row1, const auto& row2) {
     for (auto& col : sortCols) {
@@ -86,7 +126,7 @@ void ips4oSort(IdTable* table, const std::vector<ColumnIndex>& sortCols) {
     }
     return false;
   };
-  ips4o::parallel::sort(stab.begin(), stab.end(), comparison);
+  sorter(stab.begin(), stab.end(), comparison);
   *table = std::move(stab).toDynamic();
 }
 

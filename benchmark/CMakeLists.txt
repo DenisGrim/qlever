@@ -43,7 +43,8 @@ if (NOT _NO_BENCHMARK)
     # ips4o's own CMakeLists.txt) resolves to an empty interface and never
     # passes `-pthread`, so we add it explicitly here.
     target_compile_options(ips4o INTERFACE -pthread)
-    addAndLinkBenchmark(IdTableSortBenchmark engine testUtil ips4o)
+    find_package(OpenMP REQUIRED)
+    addAndLinkBenchmark(IdTableSortBenchmark engine testUtil ips4o OpenMP::OpenMP_CXX)
 
 
 endif()
