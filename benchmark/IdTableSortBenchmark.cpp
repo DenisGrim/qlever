@@ -22,7 +22,7 @@ class IdTableSortBenchmark : public BenchmarkInterface {
      config.addOption("num-rows", "how many rows in every table",
          &numRows_, {10'000, 100'000, 1'000'000});
      config.addOption("num-cols", "how many cols in every table",
-         &numCols_, {1, 2, 3, 4, 5});
+         &numCols_, {5});
      config.addOption("amount-relevant-columns",
              "how many columns are used for sorting",
          &amount_rel_columns_, {1, 2, 3});
@@ -55,6 +55,7 @@ class IdTableSortBenchmark : public BenchmarkInterface {
          // placement in results table
          for (size_t colIdx = 0; colIdx < numCols_.size(); colIdx++) {
            resultsTable.addRow();
+           // at least as many column as should be relevant
            if (arc > numCols_[colIdx]) {
              continue;
            }
@@ -72,7 +73,9 @@ class IdTableSortBenchmark : public BenchmarkInterface {
       std::vector<ColumnIndex>& sortCols) {
 
     for (int i = 0; i < static_cast<int>(SortMode::COUNT); i++) {
-      IdTable table = createRandomlyFilledIdTable(rows, numCols_[colIdx]);
+      // TODO wip early out if columns != 5 and SortMode needs RowBasedTable
+      std::variant<IdTable, std::vector<std::array<ValueId, 5>>>
+        table = createTable(rows, _numCols[colIdx], static_cast<SortMode>(i));
       auto sortTest = [&](){
           runOneBenchmark(table, static_cast<SortMode>(i), sortCols);
       };
@@ -80,34 +83,66 @@ class IdTableSortBenchmark : public BenchmarkInterface {
     }
   }
 
-  // TODO 
   void runOneBenchmark(IdTable& table, SortMode mode,
           std::vector<ColumnIndex> sortCols) {
     switch (mode) {
+      // special treatment for production
       case SortMode::PRODUCTION:
         IdTableUtils::sort(table, sortCols);
         break;
 
-      // all modes using row proxies
-      case SortMode::ROWP_IPS4O:
-      case SortMode::ROWP_IPS4O_SEQ:
-      case SortMode::ROWP_GNU:
-      //case SortMode::ROWP_STD_PAR:
-      //case SortMode::ROWP_BOOST:
-        ad_utility::callFixedSizeVi(table.numColumns(),
-                                    [&table, &sortCols, &mode](auto I){
-                                    rowProxySort<I>
-                                    (&table, sortCols, detail::Sorter{mode});
-                                    });
-        break;
-      // rest treat IdTable as column-based -> permutation
-      default:
+      // all modes using Permutation sort
+      case SortMode::PERM_IPS4O:
+      case SortMode::PERM_IPS4O_SEQ:
+      case SortMode::PERM_STD:
+      case SortMode::PERM_GNU:
+      case SortMode::PERM_STD_PAR:
         ad_utility::callFixedSizeVi(table.numColumns(),
                                     [&table, &sortCols, &mode](auto I) {
                                     sortByPermutation<I>
                                     (&table, sortCols, detail::Sorter{mode});
                                     });
+        break;
+      // rowSort has overload for vector<array> vs IdTable
+      default:
+        std::visit([&sortCols, &mode](auto&& tab){
+            rowSort(tab, sort, detail::Sorter{mode});
+            }, table);
+    } // switch mode
+  }
+
+  std::variant<IdTable, std::vector<std::array<ValueId, 5>>> createTable(int rows, int cols, SortMode mode) {
+    switch (mode) {
+      // all modes that need RowBasedIdTable
+      case SortMode::ROWTABLE_IPS4O:
+      case SortMode::ROWTABLE_STD_SEQ:
+      case SortMode::ROWTABLE_IPS4O_SEQ:
+      case SortMode::ROWTABLE_GNU:
+      case SortMode::ROWTABLE_STD_PAR:
+        return createRowBasedValueIdTable(rows);
+        break;
+      default:
+        return createRandomlyFilledIdTable(rows, cols);
     }
+
+  }
+
+  std::vector<std::array<ValueId, 5>> createRowBasedValueIdTable(int rows) {
+    std::vector<std::array<ValueId, 5>> rowTable(rows);
+    
+    ad_utility::SlowRandomIntGenerator<size_t> randomNumberGenerator(
+        0, ValueId::maxIndex);
+    std::function<ValueId()> valueIdGenerator = [&randomNumberGenerator]() {
+      return ad_utility::testing::VocabId(randomNumberGenerator());
+    };
+    
+    for (auto& row : rowTable) {
+      for (auto& entry : row) {
+        entry = valueIdGenerator();
+      }
+    }
+
+    return rowTable;
   }
 
 };
