@@ -13,16 +13,14 @@ namespace ad_benchmark {
 class IdTableSortBenchmark : public BenchmarkInterface {
  protected:
   std::vector<int> numRows_;
-  std::vector<int> numCols_;
   std::vector<int> amount_rel_columns_;
+  const std::array<int, 5> numCols_ = {1, 2, 3, 4, 5};
 
  public:
    IdTableSortBenchmark() {
      ad_utility::ConfigManager& config = getConfigManager();
      config.addOption("num-rows", "how many rows in every table",
          &numRows_, {10'000, 100'000, 1'000'000});
-     config.addOption("num-cols", "how many cols in every table",
-         &numCols_, {5});
      config.addOption("amount-relevant-columns",
              "how many columns are used for sorting",
          &amount_rel_columns_, {1, 2, 3});
@@ -33,9 +31,6 @@ class IdTableSortBenchmark : public BenchmarkInterface {
      return "IdTableSortBenchmark";
    }
    
-   // Required. This is where you actually measure things, using the
-   // `BenchmarkResults` passed around by value/reference. See
-   // `benchmark/Usage.md` and `benchmark/BenchmarkExamples.cpp` for the full
    // feature set (single measurements, groups, tables).
    BenchmarkResults runAllBenchmarks() override {
      BenchmarkResults results{};
@@ -72,23 +67,24 @@ class IdTableSortBenchmark : public BenchmarkInterface {
   void addEverySortMethodToResults(auto& resultsTable, int rows, int colIdx,
       std::vector<ColumnIndex>& sortCols) {
 
-    for (int i = 0; i < static_cast<int>(SortMode::COUNT); i++) {
-      // TODO wip early out if columns != 5 and SortMode needs RowBasedTable
-      std::variant<IdTable, std::vector<std::array<ValueId, 5>>>
-        table = createTable(rows, _numCols[colIdx], static_cast<SortMode>(i));
-      auto sortTest = [&](){
-          runOneBenchmark(table, static_cast<SortMode>(i), sortCols);
-      };
-      resultsTable.addMeasurement(colIdx, i + 1, sortTest);
-    }
+    ad_utility::callFixedSizeVi(numCols_[colIdx], [&](auto I) {
+      for (int i = 0; i < static_cast<int>(SortMode::COUNT); i++) {
+        auto table = createTable<I>(rows, numCols_[colIdx], static_cast<SortMode>(i));
+        auto sortTest = [&](){
+            runOneBenchmark<I>(table, static_cast<SortMode>(i), sortCols);
+        };
+        resultsTable.addMeasurement(colIdx, i + 1, sortTest);
+      }
+    });
   }
 
-  void runOneBenchmark(IdTable& table, SortMode mode,
-          std::vector<ColumnIndex> sortCols) {
+  template<int constCols>
+  void runOneBenchmark(std::variant<IdTable, std::vector<std::array<ValueId, constCols>>>& table,
+          SortMode mode, std::vector<ColumnIndex> sortCols) {
     switch (mode) {
       // special treatment for production
       case SortMode::PRODUCTION:
-        IdTableUtils::sort(table, sortCols);
+        IdTableUtils::sort(std::get<IdTable>(table), sortCols);
         break;
 
       // all modes using Permutation sort
@@ -96,22 +92,25 @@ class IdTableSortBenchmark : public BenchmarkInterface {
       case SortMode::PERM_IPS4O_SEQ:
       case SortMode::PERM_STD:
       case SortMode::PERM_GNU:
-      case SortMode::PERM_STD_PAR:
-        ad_utility::callFixedSizeVi(table.numColumns(),
-                                    [&table, &sortCols, &mode](auto I) {
+      case SortMode::PERM_STD_PAR: {
+        IdTable& idTable = std::get<IdTable>(table);
+        ad_utility::callFixedSizeVi(idTable.numColumns(),
+                                    [&idTable, &sortCols, &mode](auto I) {
                                     sortByPermutation<I>
-                                    (&table, sortCols, detail::Sorter{mode});
+                                    (&idTable, sortCols, detail::Sorter{mode});
                                     });
         break;
+      }
       // rowSort has overload for vector<array> vs IdTable
       default:
         std::visit([&sortCols, &mode](auto&& tab){
-            rowSort(tab, sort, detail::Sorter{mode});
+            rowSort<constCols>(tab, sortCols, detail::Sorter{mode});
             }, table);
     } // switch mode
   }
 
-  std::variant<IdTable, std::vector<std::array<ValueId, 5>>> createTable(int rows, int cols, SortMode mode) {
+  template<int i>
+  std::variant<IdTable, std::vector<std::array<ValueId, i>>> createTable(int rows, int cols, SortMode mode) {
     switch (mode) {
       // all modes that need RowBasedIdTable
       case SortMode::ROWTABLE_IPS4O:
@@ -119,7 +118,7 @@ class IdTableSortBenchmark : public BenchmarkInterface {
       case SortMode::ROWTABLE_IPS4O_SEQ:
       case SortMode::ROWTABLE_GNU:
       case SortMode::ROWTABLE_STD_PAR:
-        return createRowBasedValueIdTable(rows);
+        return createRowBasedValueIdTable<i>(rows);
         break;
       default:
         return createRandomlyFilledIdTable(rows, cols);
@@ -127,8 +126,9 @@ class IdTableSortBenchmark : public BenchmarkInterface {
 
   }
 
-  std::vector<std::array<ValueId, 5>> createRowBasedValueIdTable(int rows) {
-    std::vector<std::array<ValueId, 5>> rowTable(rows);
+  template<int i>
+  std::vector<std::array<ValueId, i>> createRowBasedValueIdTable(int rows) {
+    std::vector<std::array<ValueId, i>> rowTable(rows);
     
     ad_utility::SlowRandomIntGenerator<size_t> randomNumberGenerator(
         0, ValueId::maxIndex);
