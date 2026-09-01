@@ -34,7 +34,7 @@ const std::vector<std::__cxx11::basic_string<char>>
     "Permutation_IPS4O", "Permutation_IPS4O_SEQ", "Permutation_STD", "Permutation_GNU",
     "Permutation_STD_PAR", /*"Permutation_BOOST",*/
     "Rowproxy_IPS4O", "Production", "Rowproxy_IPS4O_SEQ", "Rowproxy_GNU",
-    "Rowproxy_STD_PAR", /*"Rowproxy_BOOST"*/,
+    "Rowproxy_STD_PAR", /*"Rowproxy_BOOST"*/
     "RowTable_IPS4O", "RowTable_STD_SEQ", "RowTable_IPS4O_SEQ", "RowTable_GNU",
     "RowTable_STD_PAR"
   };
@@ -138,7 +138,8 @@ void rowProxySort(IdTable* table, const std::vector<ColumnIndex>& sortCols,
   *table = std::move(stab).toDynamic();
 }
 
-void rowTableSort(std::vector<std::array<ValueId, 5>>& table, const std::vector<ColumnIndex>& sortCols, detail::Sorter sorter) {
+template <int constCols>
+void rowTableSort(std::vector<std::array<ValueId, constCols>>& table, const std::vector<ColumnIndex>& sortCols, detail::Sorter sorter) {
   auto comparison = [&sortCols](const auto& row1, const auto& row2) {
     for (auto& col : sortCols) {
       if (row1[col] != row2[col]) {
@@ -150,16 +151,17 @@ void rowTableSort(std::vector<std::array<ValueId, 5>>& table, const std::vector<
   sorter(table.begin(), table.end(), comparison);
 }
 
-// rowSort overload handles case for Row-based vs Column-based Table
-
-// TODO make columns (5) a template
-void rowSort(std::vector<std::array<ValueId, 5>>& table, const std::vector<ColumnIndex>& sortCols, detail::Sorter sorter) {
-  rowTableSort(table, sortCols, sorter);
+// rowSort overload handles visit for Row-based vs Column-based Table
+template<int constCols>
+void rowSort(std::vector<std::array<ValueId, constCols>>& table, const std::vector<ColumnIndex>& sortCols, detail::Sorter sorter) {
+  rowTableSort<constCols>(table, sortCols, sorter);
 }
 
+// template isn't used, but still needed so overload works
+template<int constCols>
 void rowSort(IdTable& table, const std::vector<ColumnIndex>& sortCols, detail::Sorter sorter) {
   ad_utility::callFixedSizeVi(table.numColumns(),
-                              [&table, &sortCols, &mode](auto I){
+                              [&table, &sortCols, &sorter](auto I){
                               rowProxySort<I>
                               (&table, sortCols, sorter);
                               });
