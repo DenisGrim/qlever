@@ -70,9 +70,6 @@ class IdTableSortBenchmark : public BenchmarkInterface {
 
     ad_utility::callFixedSizeVi(numCols_[colIdx], [&](auto I) {
       for (int i = 0; i < static_cast<int>(SortMode::COUNT); i++) {
-        if (i != 5 && i != 16) {
-          continue;
-        }
         auto table = createTable<I>(rows, numCols_[colIdx], static_cast<SortMode>(i));
         auto sortTest = [&](){
             runOneBenchmark<I>(table, static_cast<SortMode>(i), sortCols);
