@@ -6,6 +6,7 @@
 #include "engine/idTable/IdTable.h"
 #include "index/IdTableUtils.h"
 #include "ips4o.hpp"
+#include <boost/sort/sort.hpp>
 
 namespace ad_benchmark {
 
@@ -69,6 +70,9 @@ class IdTableSortBenchmark : public BenchmarkInterface {
 
     ad_utility::callFixedSizeVi(numCols_[colIdx], [&](auto I) {
       for (int i = 0; i < static_cast<int>(SortMode::COUNT); i++) {
+        if (i != 5 && i != 16) {
+          continue;
+        }
         auto table = createTable<I>(rows, numCols_[colIdx], static_cast<SortMode>(i));
         auto sortTest = [&](){
             runOneBenchmark<I>(table, static_cast<SortMode>(i), sortCols);
@@ -86,6 +90,23 @@ class IdTableSortBenchmark : public BenchmarkInterface {
       case SortMode::PRODUCTION:
         IdTableUtils::sort(std::get<IdTable>(table), sortCols);
         break;
+      // special for boost as sorter because putting it in detail::Sorter
+      // won't compile
+      case SortMode::PERM_BOOST: {
+        IdTable& idTable = std::get<IdTable>(table);
+        ad_utility::callFixedSizeVi(idTable.numColumns(),
+                                    [&idTable, &sortCols](auto I) {
+                                    sortByPermutation<I>
+                                    (&idTable, sortCols, detail::boostSort);
+                                    });
+        break;
+      }
+      case SortMode::ROWTABLE_BOOST:
+        rowSort<constCols>(
+            std::get<std::vector<std::array<ValueId, constCols>>>(table),
+            sortCols, detail::boostSort);
+        break;
+
 
       // all modes using Permutation sort
       case SortMode::PERM_IPS4O:
@@ -118,6 +139,7 @@ class IdTableSortBenchmark : public BenchmarkInterface {
       case SortMode::ROWTABLE_IPS4O_SEQ:
       case SortMode::ROWTABLE_GNU:
       case SortMode::ROWTABLE_STD_PAR:
+      case SortMode::ROWTABLE_BOOST:
         return createRowBasedValueIdTable<i>(rows);
         break;
       default:
