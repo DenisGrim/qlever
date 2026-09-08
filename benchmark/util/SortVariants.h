@@ -24,19 +24,22 @@ namespace ad_benchmark {
 
 // since the enum is used to iterate through and determines placement in column,
 // it's best when the column-names are right beside it to make sure order matches
+// for Boost: it's parallel sort attempts to take a reference to a dereferenced row. 
+// Since that is a rvalue, the proxy
 enum class SortMode {PERM_IPS4O, PERM_IPS4O_SEQ, PERM_STD, PERM_GNU, PERM_STD_PAR,
-  /*PERM_BOOST,*/
+  PERM_BOOST,
   ROWP_IPS4O, PRODUCTION, ROWP_IPS4O_SEQ, ROWP_GNU, ROWP_STD_PAR, /*ROWP_BOOST,*/
-  ROWTABLE_IPS4O, ROWTABLE_STD_SEQ, ROWTABLE_IPS4O_SEQ, ROWTABLE_GNU, ROWTABLE_STD_PAR,
+  ROWTABLE_IPS4O, ROWTABLE_STD_SEQ, ROWTABLE_IPS4O_SEQ, ROWTABLE_GNU,
+  ROWTABLE_STD_PAR, ROWTABLE_BOOST,
   COUNT};
 const std::vector<std::__cxx11::basic_string<char>>
   SortModeColumnNames = {"Column_amount",
-    "Permutation_IPS4O", "Permutation_IPS4O_SEQ", "Permutation_STD", "Permutation_GNU",
-    "Permutation_STD_PAR", /*"Permutation_BOOST",*/
-    "Rowproxy_IPS4O", "Production", "Rowproxy_IPS4O_SEQ", "Rowproxy_GNU",
-    "Rowproxy_STD_PAR", /*"Rowproxy_BOOST"*/
+    "Permutation_IPS4O_PAR", "Permutation_IPS4O_SEQ", "Permutation_STD_SEQ",
+    "Permutation_GNU", "Permutation_STD_PAR", "Permutation_BOOST",
+    "RowProxy_IPS4O_PAR", "Production", "RowProxy_IPS4O_SEQ", "RowProxy_GNU",
+    "RowProxy_STD_PAR", /*"RowProxy_BOOST",*/
     "RowTable_IPS4O", "RowTable_STD_SEQ", "RowTable_IPS4O_SEQ", "RowTable_GNU",
-    "RowTable_STD_PAR"
+    "RowTable_STD_PAR", "RowTable_BOOST"
   };
 
 namespace detail {
@@ -71,17 +74,17 @@ struct Sorter {
       case SortMode::ROWTABLE_STD_PAR:
         std::sort(std::execution::par, begin, end, comp);
         break;
-      /* boost creates compiling error because 
-      case SortMode::PERM_BOOST:
-      case SortMode::ROWP_BOOST:
-        boost::sort::block_indirect_sort(begin, end, comp);
-        break;
-      */
       default:
         std::runtime_error("no valid mode selected for Sorter");
     }
   }
 };
+
+// wrapper for boost sort
+inline constexpr auto boostSort = [](auto begin, auto end, auto comp) {
+  boost::sort::block_indirect_sort(begin, end, comp);
+};
+
 }  // namespace detail
 
 
@@ -124,7 +127,7 @@ void sortByPermutation(IdTable* table, const std::vector<ColumnIndex>& sortCols,
 
 template <int WIDTH, typename Sorter = detail::Sorter>
 void rowProxySort(IdTable* table, const std::vector<ColumnIndex>& sortCols,
-    detail::Sorter sorter) {
+    Sorter sorter) {
   IdTableStatic<WIDTH> stab = std::move(*table).toStatic<WIDTH>();
   auto comparison = [&sortCols](const auto& row1, const auto& row2) {
     for (auto& col : sortCols) {
@@ -138,8 +141,8 @@ void rowProxySort(IdTable* table, const std::vector<ColumnIndex>& sortCols,
   *table = std::move(stab).toDynamic();
 }
 
-template <int constCols>
-void rowTableSort(std::vector<std::array<ValueId, constCols>>& table, const std::vector<ColumnIndex>& sortCols, detail::Sorter sorter) {
+template <int constCols, typename Sorter = detail::Sorter>
+void rowTableSort(std::vector<std::array<ValueId, constCols>>& table, const std::vector<ColumnIndex>& sortCols, Sorter sorter) {
   auto comparison = [&sortCols](const auto& row1, const auto& row2) {
     for (auto& col : sortCols) {
       if (row1[col] != row2[col]) {
@@ -152,14 +155,14 @@ void rowTableSort(std::vector<std::array<ValueId, constCols>>& table, const std:
 }
 
 // rowSort overload handles visit for Row-based vs Column-based Table
-template<int constCols>
-void rowSort(std::vector<std::array<ValueId, constCols>>& table, const std::vector<ColumnIndex>& sortCols, detail::Sorter sorter) {
+template<int constCols, typename Sorter = detail::Sorter>
+void rowSort(std::vector<std::array<ValueId, constCols>>& table, const std::vector<ColumnIndex>& sortCols, Sorter sorter) {
   rowTableSort<constCols>(table, sortCols, sorter);
 }
 
 // template isn't used, but still needed so overload works
-template<int constCols>
-void rowSort(IdTable& table, const std::vector<ColumnIndex>& sortCols, detail::Sorter sorter) {
+template<int constCols, typename Sorter = detail::Sorter>
+void rowSort(IdTable& table, const std::vector<ColumnIndex>& sortCols, Sorter sorter) {
   ad_utility::callFixedSizeVi(table.numColumns(),
                               [&table, &sortCols, &sorter](auto I){
                               rowProxySort<I>
