@@ -26,20 +26,16 @@ namespace ad_benchmark {
 // it's best when the column-names are right beside it to make sure order matches
 // for Boost: it's parallel sort attempts to take a reference to a dereferenced row. 
 // Since that is a rvalue, the proxy
-enum class SortMode {PERM_IPS4O, PERM_IPS4O_SEQ, PERM_STD, PERM_GNU, PERM_STD_PAR,
-  PERM_BOOST,
-  ROWP_IPS4O, PRODUCTION, ROWP_IPS4O_SEQ, ROWP_GNU, ROWP_STD_PAR, /*ROWP_BOOST,*/
-  ROWTABLE_IPS4O, ROWTABLE_STD_SEQ, ROWTABLE_IPS4O_SEQ, ROWTABLE_GNU,
-  ROWTABLE_STD_PAR, ROWTABLE_BOOST,
+enum class SortMode {PERM_IPS4O, PERM_GNU, PERM_STD_PAR, PERM_BOOST,
+  ROWP_IPS4O, ROWP_GNU, ROWP_STD_PAR, /*ROWP_BOOST,*/
+  ROWTABLE_IPS4O, ROWTABLE_GNU, ROWTABLE_STD_PAR, ROWTABLE_BOOST,
   COUNT};
 const std::vector<std::__cxx11::basic_string<char>>
   SortModeColumnNames = {"Column_amount",
-    "Permutation_IPS4O_PAR", "Permutation_IPS4O_SEQ", "Permutation_STD_SEQ",
-    "Permutation_GNU", "Permutation_STD_PAR", "Permutation_BOOST",
-    "RowProxy_IPS4O_PAR", "Production", "RowProxy_IPS4O_SEQ", "RowProxy_GNU",
-    "RowProxy_STD_PAR", /*"RowProxy_BOOST",*/
-    "RowTable_IPS4O", "RowTable_STD_SEQ", "RowTable_IPS4O_SEQ", "RowTable_GNU",
-    "RowTable_STD_PAR", "RowTable_BOOST"
+    "Permutation_IPS4O_PAR", "Permutation_GNU", "Permutation_STD_PAR",
+    "Permutation_BOOST",
+    "RowProxy_IPS4O_PAR", "RowProxy_GNU", "RowProxy_STD_PAR", /*"RowProxy_BOOST",*/
+    "RowTable_IPS4O", "RowTable_GNU", "RowTable_STD_PAR", "RowTable_BOOST"
   };
 
 namespace detail {
@@ -50,19 +46,10 @@ struct Sorter {
   template <typename It, typename Comp>
   void operator()(It begin, It end, Comp comp) const {
     switch (mode_) {
-      case SortMode::PERM_STD:
-      case SortMode::ROWTABLE_STD_SEQ:
-        std::sort(begin, end, comp);
-        break;
       case SortMode::PERM_IPS4O: 
       case SortMode::ROWP_IPS4O:
       case SortMode::ROWTABLE_IPS4O:
         ips4o::parallel::sort(begin, end, comp);
-        break;
-      case SortMode::PERM_IPS4O_SEQ:
-      case SortMode::ROWP_IPS4O_SEQ:
-      case SortMode::ROWTABLE_IPS4O_SEQ:
-        ips4o::sort(begin, end, comp);
         break;
       case SortMode::PERM_GNU:
       case SortMode::ROWP_GNU:
