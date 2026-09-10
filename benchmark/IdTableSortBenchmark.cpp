@@ -83,10 +83,6 @@ class IdTableSortBenchmark : public BenchmarkInterface {
   void runOneBenchmark(std::variant<IdTable, std::vector<std::array<ValueId, constCols>>>& table,
           SortMode mode, std::vector<ColumnIndex> sortCols) {
     switch (mode) {
-      // special treatment for production
-      case SortMode::PRODUCTION:
-        IdTableUtils::sort(std::get<IdTable>(table), sortCols);
-        break;
       // special for boost as sorter because putting it in detail::Sorter
       // won't compile
       case SortMode::PERM_BOOST: {
@@ -107,8 +103,6 @@ class IdTableSortBenchmark : public BenchmarkInterface {
 
       // all modes using Permutation sort
       case SortMode::PERM_IPS4O:
-      case SortMode::PERM_IPS4O_SEQ:
-      case SortMode::PERM_STD:
       case SortMode::PERM_GNU:
       case SortMode::PERM_STD_PAR: {
         IdTable& idTable = std::get<IdTable>(table);
@@ -132,8 +126,6 @@ class IdTableSortBenchmark : public BenchmarkInterface {
     switch (mode) {
       // all modes that need RowBasedIdTable
       case SortMode::ROWTABLE_IPS4O:
-      case SortMode::ROWTABLE_STD_SEQ:
-      case SortMode::ROWTABLE_IPS4O_SEQ:
       case SortMode::ROWTABLE_GNU:
       case SortMode::ROWTABLE_STD_PAR:
       case SortMode::ROWTABLE_BOOST:
