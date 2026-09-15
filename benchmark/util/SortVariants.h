@@ -6,6 +6,8 @@
 #define QLEVER_BENCHMARK_IDTABLESORTBENCHMARK_SORTVARIANTS_H
 
 #include <algorithm>
+#include <chrono>
+#include <iostream>
 #include <numeric>
 #include <vector>
 #include <parallel/algorithm>
@@ -74,12 +76,27 @@ inline constexpr auto boostSort = [](auto begin, auto end, auto comp) {
 
 }  // namespace detail
 
+template <int WIDTH>
+IdTableStatic<WIDTH> copyWithAppliedPermutation(IdTableStatic<WIDTH>& stab,
+  std::vector<std::size_t> perm) {
+  IdTableStatic<WIDTH> result{stab.numColumns(), stab.getAllocator()};
+  result.resize(stab.numRows());
+
+  for (size_t col = 0; col < stab.numColumns(); ++col) {
+    auto src = stab.getColumn(col);
+    auto dst = result.getColumn(col);
+    for (size_t i = 0; i < stab.numRows(); ++i) {
+      dst[i] = src[perm[i]];
+    }
+  }
+  return result;
+}
 
 template <int WIDTH, typename Sorter = detail::Sorter>
 void sortByPermutation(IdTable* table, const std::vector<ColumnIndex>& sortCols,
-        Sorter sorter) {
+        Sorter sorter, std::string_view label = "") {
   IdTableStatic<WIDTH> stab = std::move(*table).toStatic<WIDTH>();
-  // get columns from table as array since 
+  // get columns from table as array since
   // IdTable's [] operator uses unnecessary row-proxy
   auto cols = std::as_const(stab).getColumns();
   std::size_t numRows = stab.numRows();
@@ -95,22 +112,21 @@ void sortByPermutation(IdTable* table, const std::vector<ColumnIndex>& sortCols,
   //indentity permutation
   std::vector<std::size_t> perm(numRows);
   std::iota(perm.begin(), perm.end(), 0);
-  
+
+  auto sortStart = std::chrono::steady_clock::now();
   sorter(perm.begin(), perm.end(), comparison);
+  auto sortEnd = std::chrono::steady_clock::now();
 
-  // apply permutation into new table
-  IdTableStatic<WIDTH> result{stab.numColumns(), stab.getAllocator()};
-  result.resize(numRows);
+  *table = std::move(copyWithAppliedPermutation<WIDTH>(stab, perm)).toDynamic();
+  auto copyEnd = std::chrono::steady_clock::now();
 
-  for (size_t col = 0; col < stab.numColumns(); ++col) {
-    auto src = stab.getColumn(col);
-    auto dst = result.getColumn(col);
-    for (size_t i = 0; i < numRows; ++i) {
-      dst[i] = src[perm[i]];
-    }
-  }
-  *table = std::move(result).toDynamic();
+  std::cerr << "[timing] " << label << " rows=" << numRows
+            << " sort_ms=" << std::chrono::duration<double, std::milli>(
+                                  sortEnd - sortStart).count()
+            << " copy_ms=" << std::chrono::duration<double, std::milli>(
+                                  copyEnd - sortEnd).count() << "\n";
 }
+
 
 template <int WIDTH, typename Sorter = detail::Sorter>
 void rowProxySort(IdTable* table, const std::vector<ColumnIndex>& sortCols,
