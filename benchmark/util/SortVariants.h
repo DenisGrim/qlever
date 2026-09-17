@@ -12,6 +12,7 @@
 #include <vector>
 #include <parallel/algorithm>
 #include <execution>
+#include <omp.h>
 #include <boost/sort/sort.hpp>
 
 #include "engine/idTable/IdTable.h"
@@ -85,7 +86,9 @@ IdTableStatic<WIDTH> copyWithAppliedPermutation(IdTableStatic<WIDTH>& stab,
   for (size_t col = 0; col < stab.numColumns(); ++col) {
     auto src = stab.getColumn(col);
     auto dst = result.getColumn(col);
-    for (size_t i = 0; i < stab.numRows(); ++i) {
+    const size_t numRows = stab.numRows();
+#pragma omp parallel for
+    for (size_t i = 0; i < numRows; ++i) {
       dst[i] = src[perm[i]];
     }
   }

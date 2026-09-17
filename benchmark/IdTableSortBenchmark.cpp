@@ -69,7 +69,7 @@ class IdTableSortBenchmark : public BenchmarkInterface {
       std::vector<ColumnIndex>& sortCols) {
 
     ad_utility::callFixedSizeVi(numCols_[colIdx], [&](auto I) {
-      for (int i = 0; i < 4; i++) {
+      for (int i = 0; i < static_cast<int>(SortMode::COUNT); i++) {
         auto table = createTable<I>(rows, numCols_[colIdx], static_cast<SortMode>(i));
         auto sortTest = [&](){
             runOneBenchmark<I>(table, static_cast<SortMode>(i), sortCols);
