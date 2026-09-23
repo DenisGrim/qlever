@@ -56,10 +56,12 @@ struct Sorter {
       case SortMode::ROWP_BOOST_SS:
       case SortMode::ROWTABLE_BOOST_SS:
         boost::sort::sample_sort(begin, end, comp);
+        break;
       case SortMode::PERM_BOOST_PSS:
       case SortMode::ROWP_BOOST_PSS:
       case SortMode::ROWTABLE_BOOST_PSS:
         boost::sort::parallel_stable_sort(begin, end, comp);
+        break;
       case SortMode::PERM_IPS4O: 
       case SortMode::ROWP_IPS4O:
       case SortMode::ROWTABLE_IPS4O:
@@ -76,7 +78,7 @@ struct Sorter {
         std::sort(std::execution::par, begin, end, comp);
         break;
       default:
-        std::runtime_error("no valid mode selected for Sorter");
+        throw std::runtime_error("no valid mode selected for Sorter");
     }
   }
 };
