@@ -6,8 +6,6 @@
 #define QLEVER_BENCHMARK_IDTABLESORTBENCHMARK_SORTVARIANTS_H
 
 #include <algorithm>
-#include <chrono>
-#include <iostream>
 #include <numeric>
 #include <vector>
 #include <parallel/algorithm>
@@ -29,16 +27,21 @@ namespace ad_benchmark {
 // it's best when the column-names are right beside it to make sure order matches
 // for Boost: it's parallel sort attempts to take a reference to a dereferenced row. 
 // Since that is a rvalue, the proxy
-enum class SortMode {PERM_IPS4O, PERM_GNU, PERM_STD_PAR, PERM_BOOST,
-  ROWP_IPS4O, ROWP_GNU, ROWP_STD_PAR, /*ROWP_BOOST,*/
-  ROWTABLE_IPS4O, ROWTABLE_GNU, ROWTABLE_STD_PAR, ROWTABLE_BOOST,
+enum class SortMode {PERM_IPS4O, PERM_GNU, PERM_STD_PAR, PERM_BOOST_BIS,
+  PERM_BOOST_SS, PERM_BOOST_PSS,
+  ROWP_IPS4O, ROWP_GNU, ROWP_STD_PAR, /*ROWP_BOOST_BIS,*/ ROWP_BOOST_SS,
+  ROWP_BOOST_PSS,
+  ROWTABLE_IPS4O, ROWTABLE_GNU, ROWTABLE_STD_PAR, ROWTABLE_BOOST_BIS,
+  ROWTABLE_BOOST_SS, ROWTABLE_BOOST_PSS,
   COUNT};
 const std::vector<std::__cxx11::basic_string<char>>
   SortModeColumnNames = {"Column_amount",
     "Permutation_IPS4O_PAR", "Permutation_GNU", "Permutation_STD_PAR",
-    "Permutation_BOOST",
+    "Permutation_BOOST_BIS", "Permutation_BOOST_SS", "Permutation_BOOST_PSS",
     "RowProxy_IPS4O_PAR", "RowProxy_GNU", "RowProxy_STD_PAR", /*"RowProxy_BOOST",*/
-    "RowTable_IPS4O", "RowTable_GNU", "RowTable_STD_PAR", "RowTable_BOOST"
+    "RowProxy_BOOST_SS", "RowProxy_BOOST_PSS",
+    "RowTable_IPS4O", "RowTable_GNU", "RowTable_STD_PAR", "RowTable_BOOST_BIS",
+    "RowTable_BOOST_SS", "RowTable_BOOST_PSS"
   };
 
 namespace detail {
@@ -49,6 +52,14 @@ struct Sorter {
   template <typename It, typename Comp>
   void operator()(It begin, It end, Comp comp) const {
     switch (mode_) {
+      case SortMode::PERM_BOOST_SS:
+      case SortMode::ROWP_BOOST_SS:
+      case SortMode::ROWTABLE_BOOST_SS:
+        boost::sort::sample_sort(begin, end, comp);
+      case SortMode::PERM_BOOST_PSS:
+      case SortMode::ROWP_BOOST_PSS:
+      case SortMode::ROWTABLE_BOOST_PSS:
+        boost::sort::parallel_stable_sort(begin, end, comp);
       case SortMode::PERM_IPS4O: 
       case SortMode::ROWP_IPS4O:
       case SortMode::ROWTABLE_IPS4O:
@@ -97,10 +108,10 @@ IdTableStatic<WIDTH> copyWithAppliedPermutation(IdTableStatic<WIDTH>& stab,
 
 template <int WIDTH, typename Sorter = detail::Sorter>
 void sortByPermutation(IdTable* table, const std::vector<ColumnIndex>& sortCols,
-        Sorter sorter, std::string_view label = "") {
+        Sorter sorter) {
   IdTableStatic<WIDTH> stab = std::move(*table).toStatic<WIDTH>();
   // get columns from table as array since
-  // IdTable's [] operator uses unnecessary row-proxy
+  // IdTable's [] operator uses row-proxy
   auto cols = std::as_const(stab).getColumns();
   std::size_t numRows = stab.numRows();
 
@@ -116,18 +127,9 @@ void sortByPermutation(IdTable* table, const std::vector<ColumnIndex>& sortCols,
   std::vector<std::size_t> perm(numRows);
   std::iota(perm.begin(), perm.end(), 0);
 
-  auto sortStart = std::chrono::steady_clock::now();
   sorter(perm.begin(), perm.end(), comparison);
-  auto sortEnd = std::chrono::steady_clock::now();
 
   *table = std::move(copyWithAppliedPermutation<WIDTH>(stab, perm)).toDynamic();
-  auto copyEnd = std::chrono::steady_clock::now();
-
-  std::cerr << "[timing] " << label << " rows=" << numRows
-            << " sort_ms=" << std::chrono::duration<double, std::milli>(
-                                  sortEnd - sortStart).count()
-            << " copy_ms=" << std::chrono::duration<double, std::milli>(
-                                  copyEnd - sortEnd).count() << "\n";
 }
 
 

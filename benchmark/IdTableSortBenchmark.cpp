@@ -32,11 +32,9 @@ class IdTableSortBenchmark : public BenchmarkInterface {
      return "IdTableSortBenchmark";
    }
    
-   // feature set (single measurements, groups, tables).
    BenchmarkResults runAllBenchmarks() override {
      BenchmarkResults results{};
    
-
      for (int arc : amount_rel_columns_) {
        auto& group = results.addGroup("amount_sorting_columns: "
            + std::to_string(arc));
@@ -85,17 +83,16 @@ class IdTableSortBenchmark : public BenchmarkInterface {
     switch (mode) {
       // special for boost as sorter because putting it in detail::Sorter
       // won't compile
-      case SortMode::PERM_BOOST: {
+      case SortMode::PERM_BOOST_BIS: {
         IdTable& idTable = std::get<IdTable>(table);
         ad_utility::callFixedSizeVi(idTable.numColumns(),
                                     [&idTable, &sortCols](auto I) {
                                     sortByPermutation<I>
-                                    (&idTable, sortCols, detail::boostSort,
-                                     "PERM_BOOST");
+                                    (&idTable, sortCols, detail::boostSort);
                                     });
         break;
       }
-      case SortMode::ROWTABLE_BOOST:
+      case SortMode::ROWTABLE_BOOST_BIS:
         rowSort<constCols>(
             std::get<std::vector<std::array<ValueId, constCols>>>(table),
             sortCols, detail::boostSort);
@@ -103,16 +100,16 @@ class IdTableSortBenchmark : public BenchmarkInterface {
 
 
       // all modes using Permutation sort
+      case SortMode::PERM_BOOST_SS:
+      case SortMode::PERM_BOOST_PSS:
       case SortMode::PERM_IPS4O:
       case SortMode::PERM_GNU:
       case SortMode::PERM_STD_PAR: {
         IdTable& idTable = std::get<IdTable>(table);
-        std::string label = SortModeColumnNames.at(static_cast<size_t>(mode) + 1);
         ad_utility::callFixedSizeVi(idTable.numColumns(),
-                                    [&idTable, &sortCols, &mode, &label](auto I) {
+                                    [&idTable, &sortCols, &mode](auto I) {
                                     sortByPermutation<I>
-                                    (&idTable, sortCols, detail::Sorter{mode},
-                                     label);
+                                    (&idTable, sortCols, detail::Sorter{mode}):
                                     });
         break;
       }
@@ -131,7 +128,9 @@ class IdTableSortBenchmark : public BenchmarkInterface {
       case SortMode::ROWTABLE_IPS4O:
       case SortMode::ROWTABLE_GNU:
       case SortMode::ROWTABLE_STD_PAR:
-      case SortMode::ROWTABLE_BOOST:
+      case SortMode::ROWTABLE_BOOST_BIS:
+      case SortMode::ROWTABLE_BOOST_PSS:
+      case SortMode::ROWTABLE_BOOST_SS:
         return createRowBasedValueIdTable<i>(rows);
         break;
       default:
@@ -160,7 +159,6 @@ class IdTableSortBenchmark : public BenchmarkInterface {
   }
 
 };
-
 
 
 AD_REGISTER_BENCHMARK(IdTableSortBenchmark);
