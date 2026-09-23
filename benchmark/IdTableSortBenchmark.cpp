@@ -109,7 +109,7 @@ class IdTableSortBenchmark : public BenchmarkInterface {
         ad_utility::callFixedSizeVi(idTable.numColumns(),
                                     [&idTable, &sortCols, &mode](auto I) {
                                     sortByPermutation<I>
-                                    (&idTable, sortCols, detail::Sorter{mode}):
+                                    (&idTable, sortCols, detail::Sorter{mode});
                                     });
         break;
       }
