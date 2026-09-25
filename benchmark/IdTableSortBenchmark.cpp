@@ -21,7 +21,7 @@ class IdTableSortBenchmark : public BenchmarkInterface {
    IdTableSortBenchmark() {
      ad_utility::ConfigManager& config = getConfigManager();
      config.addOption("num-rows", "how many rows in every table",
-         &numRows_, {1'000'000});
+         &numRows_, {10'000'000});
      config.addOption("amount-relevant-columns",
              "how many columns are used for sorting",
          &amount_rel_columns_, {3});
@@ -68,6 +68,7 @@ class IdTableSortBenchmark : public BenchmarkInterface {
 
     ad_utility::callFixedSizeVi(numCols_[colIdx], [&](auto I) {
       for (int i = 0; i < static_cast<int>(SortMode::COUNT); i++) {
+        if (i != 0) {continue;}
         auto table = createTable<I>(rows, numCols_[colIdx], static_cast<SortMode>(i));
         auto sortTest = [&](){
             runOneBenchmark<I>(table, static_cast<SortMode>(i), sortCols);
