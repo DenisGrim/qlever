@@ -92,7 +92,7 @@ inline constexpr auto boostSort = [](auto begin, auto end, auto comp) {
 
 template <int WIDTH>
 IdTableStatic<WIDTH> copyWithAppliedPermutation(IdTableStatic<WIDTH>& stab,
-  std::vector<std::size_t> perm) {
+  std::vector<std::size_t>& perm) {
   IdTableStatic<WIDTH> result{stab.numColumns(), stab.getAllocator()};
   result.resize(stab.numRows());
 
