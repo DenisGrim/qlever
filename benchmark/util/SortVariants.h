@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <numeric>
+#include <string>
 #include <vector>
 #include <parallel/algorithm>
 #include <execution>
@@ -23,26 +24,44 @@
 
 namespace ad_benchmark {
 
-// since the enum is used to iterate through and determines placement in column,
-// it's best when the column-names are right beside it to make sure order matches
-// for Boost: it's parallel sort attempts to take a reference to a dereferenced row. 
-// Since that is a rvalue, the proxy
-enum class SortMode {PERM_IPS4O, PERM_GNU, PERM_STD_PAR, PERM_BOOST_BIS,
-  PERM_BOOST_SS, PERM_BOOST_PSS,
-  ROWP_IPS4O, ROWP_GNU, ROWP_STD_PAR, /*ROWP_BOOST_BIS,*/ ROWP_BOOST_SS,
-  ROWP_BOOST_PSS,
-  ROWTABLE_IPS4O, ROWTABLE_GNU, ROWTABLE_STD_PAR, ROWTABLE_BOOST_BIS,
-  ROWTABLE_BOOST_SS, ROWTABLE_BOOST_PSS,
-  COUNT};
-const std::vector<std::__cxx11::basic_string<char>>
-  SortModeColumnNames = {"Column_amount",
-    "Permutation_IPS4O_PAR", "Permutation_GNU", "Permutation_STD_PAR",
-    "Permutation_BOOST_BIS", "Permutation_BOOST_SS", "Permutation_BOOST_PSS",
-    "RowProxy_IPS4O_PAR", "RowProxy_GNU", "RowProxy_STD_PAR", /*"RowProxy_BOOST",*/
-    "RowProxy_BOOST_SS", "RowProxy_BOOST_PSS",
-    "RowTable_IPS4O", "RowTable_GNU", "RowTable_STD_PAR", "RowTable_BOOST_BIS",
-    "RowTable_BOOST_SS", "RowTable_BOOST_PSS"
-  };
+// The enum is used to iterate through the sort modes and determines their
+// placement in the results table. Both the enum and the column names are
+// generated from this single list (X-macro), so their order always matches.
+// ROWP_BOOST_BIS is left out: boost's parallel sort attempts to take a
+// reference to a dereferenced row. Since that is an rvalue, the proxy
+// doesn't compile.
+#define QLEVER_SORT_MODES(X) \
+  X(PERM_IPS4O_PAR)          \
+  X(PERM_GNU)                \
+  X(PERM_STD_PAR)            \
+  X(PERM_BOOST_BIS)          \
+  X(PERM_BOOST_SS)           \
+  X(PERM_BOOST_PSS)          \
+  X(ROWP_IPS4O_PAR)          \
+  X(ROWP_GNU)                \
+  X(ROWP_STD_PAR)            \
+  X(ROWP_BOOST_SS)           \
+  X(ROWP_BOOST_PSS)          \
+  X(ROWTABLE_IPS4O_PAR)      \
+  X(ROWTABLE_GNU)            \
+  X(ROWTABLE_STD_PAR)        \
+  X(ROWTABLE_BOOST_BIS)      \
+  X(ROWTABLE_BOOST_SS)       \
+  X(ROWTABLE_BOOST_PSS)
+
+#define QLEVER_SORT_MODE_ENUM_ENTRY(name) name,
+#define QLEVER_SORT_MODE_NAME_ENTRY(name) #name,
+
+enum class SortMode { QLEVER_SORT_MODES(QLEVER_SORT_MODE_ENUM_ENTRY) COUNT };
+
+// First column holds the number of columns of the table, the remaining ones
+// are the sort modes in enum order (column index = mode index + 1).
+inline const std::vector<std::string> SortModeColumnNames = {
+    "Column_amount", QLEVER_SORT_MODES(QLEVER_SORT_MODE_NAME_ENTRY)};
+
+#undef QLEVER_SORT_MODE_ENUM_ENTRY
+#undef QLEVER_SORT_MODE_NAME_ENTRY
+#undef QLEVER_SORT_MODES
 
 namespace detail {
 
@@ -62,9 +81,9 @@ struct Sorter {
       case SortMode::ROWTABLE_BOOST_PSS:
         boost::sort::parallel_stable_sort(begin, end, comp);
         break;
-      case SortMode::PERM_IPS4O: 
-      case SortMode::ROWP_IPS4O:
-      case SortMode::ROWTABLE_IPS4O:
+      case SortMode::PERM_IPS4O_PAR: 
+      case SortMode::ROWP_IPS4O_PAR:
+      case SortMode::ROWTABLE_IPS4O_PAR:
         ips4o::parallel::sort(begin, end, comp);
         break;
       case SortMode::PERM_GNU:
