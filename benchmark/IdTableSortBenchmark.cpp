@@ -103,7 +103,7 @@ class IdTableSortBenchmark : public BenchmarkInterface {
       // all modes using Permutation sort
       case SortMode::PERM_BOOST_SS:
       case SortMode::PERM_BOOST_PSS:
-      case SortMode::PERM_IPS4O:
+      case SortMode::PERM_IPS4O_PAR:
       case SortMode::PERM_GNU:
       case SortMode::PERM_STD_PAR: {
         IdTable& idTable = std::get<IdTable>(table);
@@ -126,7 +126,7 @@ class IdTableSortBenchmark : public BenchmarkInterface {
   std::variant<IdTable, std::vector<std::array<ValueId, i>>> createTable(int rows, int cols, SortMode mode) {
     switch (mode) {
       // all modes that need RowBasedIdTable
-      case SortMode::ROWTABLE_IPS4O:
+      case SortMode::ROWTABLE_IPS4O_PAR:
       case SortMode::ROWTABLE_GNU:
       case SortMode::ROWTABLE_STD_PAR:
       case SortMode::ROWTABLE_BOOST_BIS:
