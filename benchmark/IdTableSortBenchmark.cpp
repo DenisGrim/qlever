@@ -103,6 +103,7 @@ class IdTableSortBenchmark : public BenchmarkInterface {
       // all modes using Permutation sort
       case SortMode::PERM_BOOST_SS:
       case SortMode::PERM_BOOST_PSS:
+      case SortMode::PERM_QL_BIS:
       case SortMode::PERM_IPS4O_PAR:
       case SortMode::PERM_GNU:
       case SortMode::PERM_STD_PAR: {
@@ -132,6 +133,7 @@ class IdTableSortBenchmark : public BenchmarkInterface {
       case SortMode::ROWTABLE_BOOST_BIS:
       case SortMode::ROWTABLE_BOOST_PSS:
       case SortMode::ROWTABLE_BOOST_SS:
+      case SortMode::ROWTABLE_QL_BIS:
         return createRowBasedValueIdTable<i>(rows);
         break;
       default:

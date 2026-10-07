@@ -12,10 +12,13 @@
 #include <parallel/algorithm>
 #include <execution>
 #include <omp.h>
+#include <thread>
+#include <boost/asio/thread_pool.hpp>
 #include <boost/sort/sort.hpp>
 
 #include "engine/idTable/IdTable.h"
 #include "ips4o.hpp"
+#include "util/blockSort/BlockIndirectSort.h"
 
 
 // Alternative sort implementations for `IdTable`, benchmarked against the
@@ -30,6 +33,8 @@ namespace ad_benchmark {
 // ROWP_BOOST_BIS is left out: boost's parallel sort attempts to take a
 // reference to a dereferenced row. Since that is an rvalue, the proxy
 // doesn't compile.
+// The *_QL_BIS modes use QLever's port of boost's block_indirect_sort
+// (src/util/blockSort), which also works with proxy references.
 #define QLEVER_SORT_MODES(X) \
   X(PERM_IPS4O_PAR)          \
   X(PERM_GNU)                \
@@ -37,17 +42,20 @@ namespace ad_benchmark {
   X(PERM_BOOST_BIS)          \
   X(PERM_BOOST_SS)           \
   X(PERM_BOOST_PSS)          \
+  X(PERM_QL_BIS)             \
   X(ROWP_IPS4O_PAR)          \
   X(ROWP_GNU)                \
   X(ROWP_STD_PAR)            \
   X(ROWP_BOOST_SS)           \
   X(ROWP_BOOST_PSS)          \
+  X(ROWP_QL_BIS)             \
   X(ROWTABLE_IPS4O_PAR)      \
   X(ROWTABLE_GNU)            \
   X(ROWTABLE_STD_PAR)        \
   X(ROWTABLE_BOOST_BIS)      \
   X(ROWTABLE_BOOST_SS)       \
-  X(ROWTABLE_BOOST_PSS)
+  X(ROWTABLE_BOOST_PSS)      \
+  X(ROWTABLE_QL_BIS)
 
 #define QLEVER_SORT_MODE_ENUM_ENTRY(name) name,
 #define QLEVER_SORT_MODE_NAME_ENTRY(name) #name,
@@ -64,6 +72,17 @@ inline const std::vector<std::string> SortModeColumnNames = {
 #undef QLEVER_SORT_MODES
 
 namespace detail {
+
+// Number of threads and the thread pool used by QLever's blockIndirectSort.
+// The calling thread blocks during the sort, so the pool must not contain it.
+inline uint32_t blockSortNumThreads() {
+  return std::max(std::thread::hardware_concurrency(), 2u);
+}
+
+inline boost::asio::thread_pool& blockSortPool() {
+  static boost::asio::thread_pool pool{blockSortNumThreads()};
+  return pool;
+}
 
 struct Sorter {
   SortMode mode_;
@@ -95,6 +114,13 @@ struct Sorter {
       case SortMode::ROWP_STD_PAR:
       case SortMode::ROWTABLE_STD_PAR:
         std::sort(std::execution::par, begin, end, comp);
+        break;
+      case SortMode::PERM_QL_BIS:
+      case SortMode::ROWP_QL_BIS:
+      case SortMode::ROWTABLE_QL_BIS:
+        ad_utility::blockSort::blockIndirectSort(
+            ql::ranges::subrange(begin, end), comp, blockSortNumThreads(),
+            blockSortPool().get_executor());
         break;
       default:
         throw std::runtime_error("no valid mode selected for Sorter");
