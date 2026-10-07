@@ -15,7 +15,7 @@ class IdTableSortBenchmark : public BenchmarkInterface {
  protected:
   std::vector<int> numRows_;
   std::vector<int> amount_rel_columns_;
-  const std::array<int, 1> numCols_ = {5};
+  const std::array<int, 5> numCols_ = {1,2,3,4,5};
 
  public:
    IdTableSortBenchmark() {
@@ -24,7 +24,7 @@ class IdTableSortBenchmark : public BenchmarkInterface {
          &numRows_, {10'000'000});
      config.addOption("amount-relevant-columns",
              "how many columns are used for sorting",
-         &amount_rel_columns_, {3});
+         &amount_rel_columns_, {1,2,3});
    }
 
 
@@ -68,7 +68,6 @@ class IdTableSortBenchmark : public BenchmarkInterface {
 
     ad_utility::callFixedSizeVi(numCols_[colIdx], [&](auto I) {
       for (int i = 0; i < static_cast<int>(SortMode::COUNT); i++) {
-        if (i != 0) {continue;}
         auto table = createTable<I>(rows, numCols_[colIdx], static_cast<SortMode>(i));
         auto sortTest = [&](){
             runOneBenchmark<I>(table, static_cast<SortMode>(i), sortCols);
@@ -89,7 +88,8 @@ class IdTableSortBenchmark : public BenchmarkInterface {
         ad_utility::callFixedSizeVi(idTable.numColumns(),
                                     [&idTable, &sortCols](auto I) {
                                     sortByPermutation<I>
-                                    (&idTable, sortCols, detail::boostSort);
+                                    (&idTable, sortCols, detail::boostSort,
+                                     "PERM_BOOST_BIS");
                                     });
         break;
       }
@@ -108,10 +108,12 @@ class IdTableSortBenchmark : public BenchmarkInterface {
       case SortMode::PERM_GNU:
       case SortMode::PERM_STD_PAR: {
         IdTable& idTable = std::get<IdTable>(table);
+        std::string label = SortModeColumnNames.at(static_cast<size_t>(mode) + 1);
         ad_utility::callFixedSizeVi(idTable.numColumns(),
-                                    [&idTable, &sortCols, &mode](auto I) {
+                                    [&idTable, &sortCols, &mode, &label](auto I) {
                                     sortByPermutation<I>
-                                    (&idTable, sortCols, detail::Sorter{mode});
+                                    (&idTable, sortCols, detail::Sorter{mode},
+                                     label);
                                     });
         break;
       }

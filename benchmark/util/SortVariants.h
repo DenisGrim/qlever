@@ -11,6 +11,8 @@
 #include <vector>
 #include <parallel/algorithm>
 #include <execution>
+#include <chrono>
+#include <iostream>
 #include <omp.h>
 #include <thread>
 #include <boost/asio/thread_pool.hpp>
@@ -155,7 +157,7 @@ IdTableStatic<WIDTH> copyWithAppliedPermutation(IdTableStatic<WIDTH>& stab,
 
 template <int WIDTH, typename Sorter = detail::Sorter>
 void sortByPermutation(IdTable* table, const std::vector<ColumnIndex>& sortCols,
-        Sorter sorter) {
+        Sorter sorter, std::string_view label = "") {
   IdTableStatic<WIDTH> stab = std::move(*table).toStatic<WIDTH>();
   // get columns from table as array since
   // IdTable's [] operator uses row-proxy
@@ -174,9 +176,17 @@ void sortByPermutation(IdTable* table, const std::vector<ColumnIndex>& sortCols,
   std::vector<std::size_t> perm(numRows);
   std::iota(perm.begin(), perm.end(), 0);
 
+  auto sortStart = std::chrono::steady_clock::now();
   sorter(perm.begin(), perm.end(), comparison);
+  auto sortEnd = std::chrono::steady_clock::now();
 
   *table = std::move(copyWithAppliedPermutation<WIDTH>(stab, perm)).toDynamic();
+  auto copyEnd = std::chrono::steady_clock::now();
+  std::cerr << "[timing] " << label << " rows=" << numRows
+            << " sort_ms=" << std::chrono::duration<double, std::milli>(
+                                  sortEnd - sortStart).count()
+            << " copy_ms=" << std::chrono::duration<double, std::milli>(
+                                  copyEnd - sortEnd).count() << "\n";
 }
 
 
