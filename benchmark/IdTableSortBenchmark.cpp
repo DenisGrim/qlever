@@ -14,7 +14,7 @@ namespace ad_benchmark {
 class IdTableSortBenchmark : public BenchmarkInterface {
  protected:
   std::vector<int> numRows_;
-  std::vector<uint32_t> numThreads_;
+  std::vector<int> numThreads_;
   std::vector<int> amount_rel_columns_;
   const std::array<int, 2> numCols_ = {1,5};
 
@@ -39,9 +39,9 @@ class IdTableSortBenchmark : public BenchmarkInterface {
    BenchmarkResults runAllBenchmarks() override {
      BenchmarkResults results{};
      if (numThreads_.size() == 0) {
-       uint32_t n = std::thread::hardware_concurrency();
+       int n = static_cast<int>(std::thread::hardware_concurrency());
 
-       for (uint32_t threads = 1; threads <= n; threads *= 2) {
+       for (int threads = 1; threads <= n; threads *= 2) {
          numThreads_.push_back(threads);
        }
        // also measure with all threads if n isn't a power of two
