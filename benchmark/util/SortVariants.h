@@ -13,10 +13,13 @@
 #include <execution>
 #include <chrono>
 #include <iostream>
+#include <map>
+#include <memory>
 #include <omp.h>
 #include <thread>
 #include <boost/asio/thread_pool.hpp>
 #include <boost/sort/sort.hpp>
+#include <tbb/global_control.h>
 
 #include "engine/idTable/IdTable.h"
 #include "ips4o.hpp"
@@ -75,19 +78,22 @@ inline const std::vector<std::string> SortModeColumnNames = {
 
 namespace detail {
 
-// Number of threads and the thread pool used by QLever's blockIndirectSort.
-// The calling thread blocks during the sort, so the pool must not contain it.
-inline uint32_t blockSortNumThreads() {
-  return std::max(std::thread::hardware_concurrency(), 2u);
-}
-
-inline boost::asio::thread_pool& blockSortPool() {
-  static boost::asio::thread_pool pool{blockSortNumThreads()};
-  return pool;
+// Thread pool used by QLever's blockIndirectSort, one per thread count, so
+// that the pool is run by exactly `numThreads` threads. The calling thread
+// blocks during the sort, so the pool must not contain it (that's also why a
+// pool with a single thread is fine).
+inline boost::asio::thread_pool& blockSortPool(uint32_t numThreads) {
+  static std::map<uint32_t, std::unique_ptr<boost::asio::thread_pool>> pools;
+  auto& pool = pools[numThreads];
+  if (!pool) {
+    pool = std::make_unique<boost::asio::thread_pool>(numThreads);
+  }
+  return *pool;
 }
 
 struct Sorter {
   SortMode mode_;
+  uint32_t numThreads_;
 
   template <typename It, typename Comp>
   void operator()(It begin, It end, Comp comp) const {
@@ -95,34 +101,43 @@ struct Sorter {
       case SortMode::PERM_BOOST_SS:
       case SortMode::ROWP_BOOST_SS:
       case SortMode::ROWTABLE_BOOST_SS:
-        boost::sort::sample_sort(begin, end, comp);
+        boost::sort::sample_sort(begin, end, comp, numThreads_);
         break;
       case SortMode::PERM_BOOST_PSS:
       case SortMode::ROWP_BOOST_PSS:
       case SortMode::ROWTABLE_BOOST_PSS:
-        boost::sort::parallel_stable_sort(begin, end, comp);
+        boost::sort::parallel_stable_sort(begin, end, comp, numThreads_);
         break;
       case SortMode::PERM_IPS4O_PAR: 
       case SortMode::ROWP_IPS4O_PAR:
       case SortMode::ROWTABLE_IPS4O_PAR:
-        ips4o::parallel::sort(begin, end, comp);
+        ips4o::parallel::sort(begin, end, comp, static_cast<int>(numThreads_));
         break;
       case SortMode::PERM_GNU:
       case SortMode::ROWP_GNU:
       case SortMode::ROWTABLE_GNU:
-        __gnu_parallel::sort(begin, end, comp);
+        // `default_parallel_tag` is what `__gnu_parallel::sort` uses when no
+        // tag is given, so this is the same algorithm with a fixed thread count.
+        __gnu_parallel::sort(begin, end, comp,
+                             __gnu_parallel::default_parallel_tag(numThreads_));
         break;
       case SortMode::PERM_STD_PAR:
       case SortMode::ROWP_STD_PAR:
-      case SortMode::ROWTABLE_STD_PAR:
+      case SortMode::ROWTABLE_STD_PAR: {
+        // libstdc++'s parallel algorithms run on TBB (if its headers are
+        // found), which has no per-call thread count, only this global limit
+        // that holds while `limit` is alive.
+        tbb::global_control limit{
+            tbb::global_control::max_allowed_parallelism, numThreads_};
         std::sort(std::execution::par, begin, end, comp);
         break;
+      }
       case SortMode::PERM_QL_BIS:
       case SortMode::ROWP_QL_BIS:
       case SortMode::ROWTABLE_QL_BIS:
         ad_utility::blockSort::blockIndirectSort(
-            ql::ranges::subrange(begin, end), comp, blockSortNumThreads(),
-            blockSortPool().get_executor());
+            ql::ranges::subrange(begin, end), comp, numThreads_,
+            blockSortPool(numThreads_).get_executor());
         break;
       default:
         throw std::runtime_error("no valid mode selected for Sorter");
@@ -131,15 +146,20 @@ struct Sorter {
 };
 
 // wrapper for boost sort
-inline constexpr auto boostSort = [](auto begin, auto end, auto comp) {
-  boost::sort::block_indirect_sort(begin, end, comp);
+struct BoostSorter {
+  uint32_t numThreads_;
+
+  template <typename It, typename Comp>
+  void operator()(It begin, It end, Comp comp) const {
+    boost::sort::block_indirect_sort(begin, end, comp, numThreads_);
+  }
 };
 
 }  // namespace detail
 
 template <int WIDTH>
 IdTableStatic<WIDTH> copyWithAppliedPermutation(IdTableStatic<WIDTH>& stab,
-  std::vector<std::size_t>& perm) {
+  std::vector<std::size_t>& perm, uint32_t numThreads) {
   IdTableStatic<WIDTH> result{stab.numColumns(), stab.getAllocator()};
   result.resize(stab.numRows());
 
@@ -147,7 +167,7 @@ IdTableStatic<WIDTH> copyWithAppliedPermutation(IdTableStatic<WIDTH>& stab,
     auto src = stab.getColumn(col);
     auto dst = result.getColumn(col);
     const size_t numRows = stab.numRows();
-#pragma omp parallel for
+#pragma omp parallel for num_threads(numThreads)
     for (size_t i = 0; i < numRows; ++i) {
       dst[i] = src[perm[i]];
     }
@@ -157,7 +177,7 @@ IdTableStatic<WIDTH> copyWithAppliedPermutation(IdTableStatic<WIDTH>& stab,
 
 template <int WIDTH, typename Sorter = detail::Sorter>
 void sortByPermutation(IdTable* table, const std::vector<ColumnIndex>& sortCols,
-        Sorter sorter, std::string_view label = "") {
+        Sorter sorter, uint32_t numThreads, std::string_view label = "") {
   IdTableStatic<WIDTH> stab = std::move(*table).toStatic<WIDTH>();
   // get columns from table as array since
   // IdTable's [] operator uses row-proxy
@@ -180,7 +200,7 @@ void sortByPermutation(IdTable* table, const std::vector<ColumnIndex>& sortCols,
   sorter(perm.begin(), perm.end(), comparison);
   auto sortEnd = std::chrono::steady_clock::now();
 
-  *table = std::move(copyWithAppliedPermutation<WIDTH>(stab, perm)).toDynamic();
+  *table = std::move(copyWithAppliedPermutation<WIDTH>(stab, perm, numThreads)).toDynamic();
   auto copyEnd = std::chrono::steady_clock::now();
   std::cerr << "[timing] " << label << " rows=" << numRows
             << " sort_ms=" << std::chrono::duration<double, std::milli>(

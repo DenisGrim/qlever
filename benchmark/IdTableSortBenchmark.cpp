@@ -14,17 +14,21 @@ namespace ad_benchmark {
 class IdTableSortBenchmark : public BenchmarkInterface {
  protected:
   std::vector<int> numRows_;
+  std::vector<uint32_t> numThreads_;
   std::vector<int> amount_rel_columns_;
-  const std::array<int, 5> numCols_ = {1,2,3,4,5};
+  const std::array<int, 2> numCols_ = {1,5};
 
  public:
    IdTableSortBenchmark() {
      ad_utility::ConfigManager& config = getConfigManager();
      config.addOption("num-rows", "how many rows in every table",
-         &numRows_, {10'000'000});
+         &numRows_, {1'000'000});
+     // auto fills the vector with 1-hardware_concurrency
+     config.addOption("num-threads", "how many threads are used (none=auto)",
+         &numThreads_, {});
      config.addOption("amount-relevant-columns",
              "how many columns are used for sorting",
-         &amount_rel_columns_, {1,2,3});
+         &amount_rel_columns_, {1});
    }
 
 
@@ -34,6 +38,18 @@ class IdTableSortBenchmark : public BenchmarkInterface {
    
    BenchmarkResults runAllBenchmarks() override {
      BenchmarkResults results{};
+     if (numThreads_.size() == 0) {
+       uint32_t n = std::thread::hardware_concurrency();
+
+       for (uint32_t threads = 1; threads <= n; threads *= 2) {
+         numThreads_.push_back(threads);
+       }
+       // also measure with all threads if n isn't a power of two
+       if (!numThreads_.empty() && numThreads_.back() != n) {
+         numThreads_.push_back(n);
+       }
+     }
+    
    
      for (int arc : amount_rel_columns_) {
        auto& group = results.addGroup("amount_sorting_columns: "
@@ -41,20 +57,25 @@ class IdTableSortBenchmark : public BenchmarkInterface {
        std::vector<ColumnIndex> sortCols(arc);
        std::iota(sortCols.begin(), sortCols.end(), 0);
 
-       for (auto rows : numRows_) {
-         auto& resultsTable = group.addTable(std::to_string(rows), {},
-             SortModeColumnNames);
-
-         // loop over index of cols because it determines 
-         // placement in results table
-         for (size_t colIdx = 0; colIdx < numCols_.size(); colIdx++) {
-           resultsTable.addRow();
-           // at least as many column as should be relevant
-           if (arc > numCols_[colIdx]) {
-             continue;
+       for (uint32_t numThreads : numThreads_) {
+         for (auto rows : numRows_) {
+           // Table for each numThread + numRow combo
+           std::string tableLabel = "threads: " + std::to_string(numThreads) +
+             ", rows: " + std::to_string(rows);
+           auto& resultsTable = group.addTable(tableLabel, {}, SortModeColumnNames);
+        
+           // loop over index of cols because it determines 
+           // placement in results table
+           for (size_t colIdx = 0; colIdx < numCols_.size(); colIdx++) {
+             resultsTable.addRow();
+             // at least as many column as should be relevant
+             if (arc > numCols_[colIdx]) {
+               continue;
+             }
+             resultsTable.setEntry(colIdx, 0, std::to_string(numCols_[colIdx]));
+             addEverySortMethodToResults(resultsTable, rows, colIdx,
+                 sortCols, numThreads);
            }
-           resultsTable.setEntry(colIdx, 0, std::to_string(numCols_[colIdx]));
-           addEverySortMethodToResults(resultsTable, rows, colIdx, sortCols);
          }
        }
      }
@@ -64,13 +85,13 @@ class IdTableSortBenchmark : public BenchmarkInterface {
 
  private:
   void addEverySortMethodToResults(auto& resultsTable, int rows, int colIdx,
-      std::vector<ColumnIndex>& sortCols) {
+      std::vector<ColumnIndex>& sortCols, uint32_t numThreads) {
 
     ad_utility::callFixedSizeVi(numCols_[colIdx], [&](auto I) {
       for (int i = 0; i < static_cast<int>(SortMode::COUNT); i++) {
         auto table = createTable<I>(rows, numCols_[colIdx], static_cast<SortMode>(i));
         auto sortTest = [&](){
-            runOneBenchmark<I>(table, static_cast<SortMode>(i), sortCols);
+            runOneBenchmark<I>(table, static_cast<SortMode>(i), sortCols, numThreads);
         };
         resultsTable.addMeasurement(colIdx, i + 1, sortTest);
       }
@@ -78,17 +99,20 @@ class IdTableSortBenchmark : public BenchmarkInterface {
   }
 
   template<int constCols>
-  void runOneBenchmark(std::variant<IdTable, std::vector<std::array<ValueId, constCols>>>& table,
-          SortMode mode, std::vector<ColumnIndex> sortCols) {
+  void runOneBenchmark(std::variant<IdTable, 
+    std::vector<std::array<ValueId, constCols>>>& table,
+          SortMode mode, std::vector<ColumnIndex> sortCols, uint32_t numThreads) {
     switch (mode) {
       // special for boost as sorter because putting it in detail::Sorter
       // won't compile
       case SortMode::PERM_BOOST_BIS: {
         IdTable& idTable = std::get<IdTable>(table);
         ad_utility::callFixedSizeVi(idTable.numColumns(),
-                                    [&idTable, &sortCols](auto I) {
+                                    [&idTable, &sortCols, numThreads](auto I) {
                                     sortByPermutation<I>
-                                    (&idTable, sortCols, detail::boostSort,
+                                    (&idTable, sortCols,
+                                     detail::BoostSorter{numThreads},
+                                     numThreads,
                                      "PERM_BOOST_BIS");
                                     });
         break;
@@ -96,7 +120,7 @@ class IdTableSortBenchmark : public BenchmarkInterface {
       case SortMode::ROWTABLE_BOOST_BIS:
         rowSort<constCols>(
             std::get<std::vector<std::array<ValueId, constCols>>>(table),
-            sortCols, detail::boostSort);
+            sortCols, detail::BoostSorter{numThreads});
         break;
 
 
@@ -110,17 +134,21 @@ class IdTableSortBenchmark : public BenchmarkInterface {
         IdTable& idTable = std::get<IdTable>(table);
         std::string label = SortModeColumnNames.at(static_cast<size_t>(mode) + 1);
         ad_utility::callFixedSizeVi(idTable.numColumns(),
-                                    [&idTable, &sortCols, &mode, &label](auto I) {
+                                    [&idTable, &sortCols, &mode, &label,
+                                     numThreads](auto I) {
                                     sortByPermutation<I>
-                                    (&idTable, sortCols, detail::Sorter{mode},
+                                    (&idTable, sortCols,
+                                     detail::Sorter{mode, numThreads},
+                                     numThreads,
                                      label);
                                     });
         break;
       }
       // rowSort has overload for vector<array> vs IdTable
       default:
-        std::visit([&sortCols, &mode](auto&& tab){
-            rowSort<constCols>(tab, sortCols, detail::Sorter{mode});
+        std::visit([&sortCols, &mode, numThreads](auto&& tab){
+            rowSort<constCols>(tab, sortCols,
+                               detail::Sorter{mode, numThreads});
             }, table);
     } // switch mode
   }
